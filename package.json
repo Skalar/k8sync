@@ -1,0 +1,54 @@
+{
+  "name": "k8sync",
+  "version": "1.0.0",
+  "author": "Trym Skaar <trym.skaar@gmail.com>",
+  "description": "Watch and sync local files to kubernetes pods using watchman and rsync",
+  "repository": "skalar/k8sync",
+  "homepage": "https://github.com/skalar/k8sync",
+  "main": "lib/index.js",
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.js.map",
+    "lib/**/*.d.ts",
+    "bin/cli.js",
+    "package.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "find ./lib \\( -iname '*.js' -or -iname '*.d.ts' -or -iname '*.js.map' \\) | xargs rm && find ./tests \\( -iname '*.js' -or -iname '*.d.ts' -or -iname '*.js.map' \\) | xargs rm",
+    "test": "jest"
+  },
+  "bin": {
+    "k8sync": "./bin/cli.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@kubernetes/client-node": "^0.6.0",
+    "chalk": "^2.4.1",
+    "columnify": "^1.5.4",
+    "fb-watchman": "^2.0.0",
+    "figures": "^2.0.0",
+    "get-port": "^4.0.0",
+    "js-yaml": "^3.12.0",
+    "log-update": "^2.3.0",
+    "minimist": "^1.2.0",
+    "request": "^2.88.0"
+  },
+  "devDependencies": {
+    "@types/chalk": "^2.2.0",
+    "@types/fb-watchman": "^2.0.0",
+    "@types/figures": "^2.0.0",
+    "@types/get-port": "^4.0.0",
+    "@types/jest": "^23.3.2",
+    "@types/log-update": "^2.0.0",
+    "@types/minimist": "^1.2.0",
+    "@types/node": "^10.9.4",
+    "@types/request": "^2.47.1",
+    "jest": "^23.6.0",
+    "ts-jest": "^23.1.4",
+    "tslint": "^5.11.0",
+    "tslint-config-prettier": "^1.15.0",
+    "typescript": "^3.0.3"
+  }
+}

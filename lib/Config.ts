@@ -126,7 +126,7 @@ class Config {
       try {
         await access(path)
         return path
-      } catch {
+      } catch (error) {
         pathParts.pop()
       }
     }

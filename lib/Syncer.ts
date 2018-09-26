@@ -115,11 +115,21 @@ class Syncer extends EventEmitter {
 
           if (['ADDED', 'MODIFIED'].includes(type)) {
             if (obj.status.phase === 'Running') {
+              const podName = obj.metadata.name
+
+              if (
+                Object.values(this.targetPods[specName]).find(
+                  pod => pod.name === podName
+                )
+              ) {
+                return // We are already tracking this pod
+              }
               const nodeName = obj.spec.nodeName
               // FIXME verify that this selection is sane / support selecting by name
-              const containerId = obj.status.containerStatuses[0].containerID.substr(
-                9
-              )
+              const containerStatus = obj.status.containerStatuses[0]
+              if (!containerStatus.ready) return
+
+              const containerId = containerStatus.containerID.substr(9)
               const tunnel = await this.daemonSetTunneler.request(nodeName)
 
               const containerFsPath = (await new Promise((resolve, reject) => {
@@ -129,7 +139,6 @@ class Syncer extends EventEmitter {
                     error ? reject(error) : resolve(body)
                 )
               })) as string
-              const podName = obj.metadata.name
               const pod: TargetPod = {
                 nodeName,
                 name: podName,
@@ -255,7 +264,7 @@ class Syncer extends EventEmitter {
         targetPod.containerFsPath.split(`${nodeOverlay2Path}/`)[1],
         targetPod.sync.containerPath
       )
-      1
+
       const rsyncTarget = `rsync://localhost:${
         tunnel.rsyncPort
       }/overlay2/${relativeRsyncTargetPath}/`
@@ -300,7 +309,11 @@ class Syncer extends EventEmitter {
 
       await new Promise((resolve, reject) => {
         rsyncProcess.on('close', code => {
-          if (code) {
+          const ignoreCodes = [
+            11, // Happens when pod is deleted during a sync
+          ]
+
+          if (code && !ignoreCodes.includes(code)) {
             return reject(new Error(`rsync exited with code ${code}`))
           }
           resolve()

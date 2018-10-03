@@ -1,0 +1,24 @@
+{
+  "linterOptions": {
+    "exclude": ["bin/*"]
+  },
+  "extends": "tslint:recommended",
+  "rules": {
+    "semicolon": [true, "never", "ignore-interfaces"],
+    "quotemark": [true, "single"],
+    "trailing-comma": [true, "ignore-interfaces"],
+    "object-literal-sort-keys": false,
+    "interface-name": false,
+    "type-literal-delimiter": false,
+    "arrow-parens": false,
+    "no-console": false,
+    "curly": [true, "ignore-same-line"],
+    "max-line-length": [
+      true,
+      {
+        "ignore": "comments"
+      }
+    ],
+    "object-literal-key-quotes": [true, "as-needed"]
+  }
+}

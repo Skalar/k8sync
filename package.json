@@ -15,7 +15,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tslint -p . && tsc -p ./tsconfig.prod.json",
     "clean": "find ./lib \\( -iname '*.js' -or -iname '*.d.ts' -or -iname '*.js.map' \\) | xargs rm && find ./tests \\( -iname '*.js' -or -iname '*.d.ts' -or -iname '*.js.map' \\) | xargs rm",
     "test": "jest"
   },

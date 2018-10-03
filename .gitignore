@@ -1,4 +1,4 @@
 node_modules
-/test/tmp/
-!/test/tmp/.gitkeep
+/tests/tmp/
+!/tests/tmp/.gitkeep
 .envrc

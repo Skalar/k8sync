@@ -116,13 +116,11 @@ class NodeTunneler {
     const tunnelPromise = establishTunnel()
     this.tunnelPromises[nodeName] = tunnelPromise
 
-    return await tunnelPromise
-      .catch(error => {
-        throw error
-      })
-      .finally(() => {
-        delete this.tunnelPromises[nodeName]
-      })
+    try {
+      return await tunnelPromise
+    } finally {
+      delete this.tunnelPromises[nodeName]
+    }
   }
 
   protected async fetchDaemonSetPods() {

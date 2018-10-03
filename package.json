@@ -6,6 +6,9 @@
   "repository": "skalar/k8sync",
   "homepage": "https://github.com/skalar/k8sync",
   "main": "lib/index.js",
+  "engines": {
+    "node": ">=8.10.0"
+  },
   "files": [
     "lib/**/*.js",
     "lib/**/*.js.map",

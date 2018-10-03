@@ -14,7 +14,8 @@ Heavily inspired by [ksync](https://github.com/vapor-ware/ksync).
 ### Dependencies
 
 * [NodeJS](https://nodejs.org/en/)
-* [Watchman](https://facebook.github.io/watchman/docs/install.html)
+* [watchman](https://facebook.github.io/watchman/docs/install.html)
+* [rsync >= 3.0.0](https://rsync.samba.org/)
 
 ### Install k8sync
 

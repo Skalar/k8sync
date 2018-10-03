@@ -46,6 +46,7 @@
     "@types/node": "^10.9.4",
     "@types/request": "^2.47.1",
     "jest": "^23.6.0",
+    "strict-event-emitter-types": "^2.0.0",
     "ts-jest": "^23.1.4",
     "tslint": "^5.11.0",
     "tslint-config-prettier": "^1.15.0",

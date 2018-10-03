@@ -1,5 +1,7 @@
 import Config from './Config'
+import NodeTunneler from './NodeTunneler'
 import Syncer from './Syncer'
-import DaemonSetTunneler from './DaemonSetTunneler'
 
-export {Config, Syncer, DaemonSetTunneler}
+export {Config, Syncer, NodeTunneler}
+
+export * from './types'

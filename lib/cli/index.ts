@@ -1,8 +1,8 @@
 import * as parseArgs from 'minimist'
-import {showCommands, showCommandHelp} from './utils'
-import commands from './commands'
-import Config from '../Config'
 import {resolve} from 'path'
+import Config from '../Config'
+import commands from './commands'
+import {showCommandHelp, showCommands} from './utils'
 
 const globalParams = {
   '--config': 'Path to config file',

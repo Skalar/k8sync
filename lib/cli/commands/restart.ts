@@ -1,8 +1,8 @@
-import {CliCommand} from '../../types'
-import DaemonSetTunneler from '../../DaemonSetTunneler'
 import {Core_v1Api, V1Pod} from '@kubernetes/client-node'
-import * as request from 'request'
 import {tick} from 'figures'
+import * as request from 'request'
+import NodeTunneler from '../../NodeTunneler'
+import {CliCommand} from '../../types'
 
 const restart: CliCommand = {
   description: 'Restart containers while retaining synced files',
@@ -12,7 +12,7 @@ const restart: CliCommand = {
     const specNames = args.length ? args : Object.keys(config.sync)
 
     console.log(`Restarting ${specNames.join(', ')}`)
-    const tunneler = new DaemonSetTunneler(config)
+    const tunneler = new NodeTunneler(config)
     await tunneler.start()
 
     const restartPromises = []

@@ -1,44 +1,44 @@
-import {Watch} from '@kubernetes/client-node'
+import {V1Pod, Watch} from '@kubernetes/client-node'
 import {EventEmitter} from 'events'
 import {Client as WatchmanClient} from 'fb-watchman'
-import {
-  WatchmanSubscriptionResponse,
-  TargetPod,
-  SyncSpecification,
-} from './types'
 import {ClientRequest} from 'http'
-import DaemonSetTunneler from './DaemonSetTunneler'
 import * as request from 'request'
+import StrictEventEmitter from 'strict-event-emitter-types'
 import Config from './Config'
-import {join} from 'path'
-import {spawn, ChildProcess} from 'child_process'
+import NodeTunneler from './NodeTunneler'
+import Sync from './Sync'
+import {
+  SyncerEvents,
+  SyncerState,
+  SyncSpecification,
+  SyncType,
+  TargetPod,
+  WatchmanSubscriptionResponse,
+} from './types'
 
-class PartialSync {
-  paths: Set<string> = new Set()
+type SyncerEmitter = StrictEventEmitter<EventEmitter, SyncerEvents>
 
-  constructor(paths?: Set<string>) {
-    if (paths) {
-      this.paths = paths
-    }
-  }
-}
+class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
+  public config: Config
 
-class FullSync {
-  delete = true
-}
+  /**
+   * Synchronization specification, by targetName
+   */
+  public syncSpecs: {[targetName: string]: SyncSpecification} = {}
 
-class Syncer extends EventEmitter {
-  config: Config
+  /**
+   * Pods to keep in sync, by target
+   */
+  public targetPods: {[targetName: string]: Set<TargetPod>} = {}
 
-  watchmanClient?: WatchmanClient
-  podWatchRequest?: ClientRequest
-  daemonSetTunneler?: DaemonSetTunneler
+  /**
+   * The current state of the syncer
+   */
+  public state: SyncerState = SyncerState.Stopped
 
-  targetPods: {[specName: string]: Set<TargetPod>} = {}
-  syncQueue: {[podName: string]: PartialSync | FullSync} = {}
-  syncLocks: {[podName: string]: number} = {}
-  syncSpecs: {[name: string]: SyncSpecification} = {}
-  initialSync: {[podName: string]: boolean} = {}
+  protected watchmanClient?: WatchmanClient
+  protected targetPodWatchRequests: {[targetName: string]: ClientRequest} = {}
+  protected nodeTunneler?: NodeTunneler
 
   constructor(config: Config, specNames?: string[]) {
     super()
@@ -49,7 +49,6 @@ class Syncer extends EventEmitter {
         continue
       }
       this.syncSpecs[specName] = spec
-      this.targetPods[specName] = new Set()
     }
 
     if (Object.keys(this.syncSpecs).length === 0) {
@@ -57,121 +56,146 @@ class Syncer extends EventEmitter {
     }
   }
 
-  async start() {
+  public async start() {
+    this.state = SyncerState.Starting
+    this.emit('starting')
     this.watchmanClient = new WatchmanClient()
     this.watchmanClient.on('subscription', this.onFileChange.bind(this))
+    this.nodeTunneler = new NodeTunneler(this.config)
 
-    this.daemonSetTunneler = new DaemonSetTunneler(this.config)
-
-    await this.daemonSetTunneler.start()
-    await Promise.all([this.watchFiles(), this.watchPods()])
-    this.emit('started')
-  }
-
-  async stop() {
-    this.emit('stopRequested')
-
-    if (this.podWatchRequest) {
-      this.podWatchRequest.abort()
-      this.podWatchRequest = undefined
-    }
+    await this.nodeTunneler.start()
 
     const promises = []
 
+    for (const [specName, syncSpec] of Object.entries(this.syncSpecs)) {
+      promises.push(this.watchTargetPods(specName, syncSpec))
+    }
+
+    promises.push(this.watchFiles())
+    await Promise.all(promises)
+    this.once('error', () => this.stop())
+    this.state = SyncerState.Running
+    this.emit('running')
+  }
+
+  public async stop() {
+    this.state = SyncerState.Stopping
+    this.emit('stopping')
+
+    const promises = []
+
+    // Clean up pod watch requests
+    for (const [targetName, watchRequest] of Object.entries(
+      this.targetPodWatchRequests
+    )) {
+      watchRequest.abort()
+      delete this.targetPodWatchRequests[targetName]
+    }
+
+    // Clean up file watching
     if (this.watchmanClient) {
       this.watchmanClient.end()
       this.watchmanClient = undefined
     }
 
-    if (this.daemonSetTunneler) {
-      promises.push(this.daemonSetTunneler.stop())
-      this.daemonSetTunneler = undefined
+    // Clean up node tunneler
+    if (this.nodeTunneler) {
+      promises.push(this.nodeTunneler.stop())
+      this.nodeTunneler = undefined
     }
 
     await Promise.all(promises)
+
+    this.state = SyncerState.Stopped
     this.emit('stopped')
   }
 
-  get status() {
-    // we need
-    return {
-      test: {
-        syncStatus: 'syncing',
-        pods: [],
+  protected async watchTargetPods(
+    targetName: string,
+    syncSpec: SyncSpecification
+  ) {
+    this.targetPods[targetName] = new Set()
+
+    const watch = new Watch(this.config.kubeConfig)
+    this.targetPodWatchRequests[targetName] = watch.watch(
+      `/api/v1/watch/namespaces/${this.config.namespace}/pods`,
+      syncSpec.podSelector,
+      async (type, obj: V1Pod) => {
+        try {
+          if (['ADDED', 'MODIFIED'].includes(type)) {
+            if (obj.metadata.deletionTimestamp) {
+              // Pod is being deleted
+              await this.removeTargetPod(targetName, syncSpec, obj)
+            } else if (obj.status.phase === 'Running') {
+              const existingTargetPod = Array.from(
+                this.targetPods[targetName]
+              ).find(pod => pod.podName === obj.metadata.name)
+
+              if (existingTargetPod) return // We are already tracking this pod
+
+              await this.addTargetPod(targetName, syncSpec, obj)
+            }
+          }
+        } catch (error) {
+          this.emit('error', error)
+          throw error
+        }
       },
-    }
+      err => {
+        if (err) {
+          this.emit('error', err)
+        } else if (this.state === SyncerState.Running) {
+          this.watchTargetPods(targetName, syncSpec)
+        }
+      }
+    )
   }
 
-  protected async watchPods() {
-    for (const [specName, sync] of Object.entries(this.syncSpecs)) {
-      const watch = new Watch(this.config.kubeConfig)
-      this.podWatchRequest = watch.watch(
-        `/api/v1/watch/namespaces/${this.config.namespace}/pods`,
-        sync.podSelector,
-        async (type, obj) => {
-          if (!this.daemonSetTunneler) {
-            return
-          }
-
-          if (['ADDED', 'MODIFIED'].includes(type)) {
-            if (obj.status.phase === 'Running') {
-              const podName = obj.metadata.name
-
-              if (
-                Object.values(this.targetPods[specName]).find(
-                  pod => pod.name === podName
-                )
-              ) {
-                return // We are already tracking this pod
-              }
-              const nodeName = obj.spec.nodeName
-              // FIXME verify that this selection is sane / support selecting by name
-              const containerStatus = obj.status.containerStatuses[0]
-              if (!containerStatus.ready) return
-
-              const containerId = containerStatus.containerID.substr(9)
-              const tunnel = await this.daemonSetTunneler.request(nodeName)
-
-              const containerFsPath = (await new Promise((resolve, reject) => {
-                request.get(
-                  `http://localhost:${tunnel.apiPort}/${containerId}`,
-                  (error, response, body) =>
-                    error ? reject(error) : resolve(body)
-                )
-              })) as string
-              const pod: TargetPod = {
-                nodeName,
-                name: podName,
-                containerFsPath,
-                sync,
-                containerId,
-              }
-              this.targetPods[specName].add(pod)
-              this.emit('podAdded', pod)
-              this.syncQueue[podName] = new FullSync()
-              this.syncTarget(pod)
-            }
-          } else if (type == 'DELETED') {
-            const podName = obj.metadata.name
-            const specPods = this.targetPods[specName]
-            for (const specPod of specPods) {
-              if (specPod.name === podName) {
-                specPods.delete(specPod)
-              }
-            }
-            delete this.initialSync[podName]
-            this.emit('podDeleted', podName)
-          } else {
-            throw new Error(`Unknown type '${type}'`)
-          }
-        },
-        err => {
-          if (err) {
-            console.dir({err})
-          }
-          throw new Error('Lost connection with cluster')
-        }
+  protected async addTargetPod(
+    targetName: string,
+    syncSpec: SyncSpecification,
+    pod: V1Pod
+  ) {
+    if (!this.nodeTunneler) {
+      this.emit(
+        'error',
+        new Error('Cannot add pod when daemonSetTunneler is not available')
       )
+      return
+    }
+
+    const podName = pod.metadata.name
+    const nodeName = pod.spec.nodeName
+    // FIXME verify that this selection is sane / support selecting by name
+    const containerStatus = pod.status.containerStatuses[0]
+    if (!containerStatus.ready) return
+
+    const containerId = containerStatus.containerID.substr(9)
+    const targetPod: TargetPod = {
+      hasBeenSynced: false,
+      nodeName,
+      podName,
+      syncSpec,
+      containerId,
+    }
+    this.targetPods[targetName].add(targetPod)
+    this.emit('podAdded', targetPod)
+    targetPod.pendingSync = new Sync(SyncType.Full, targetPod)
+    this.syncTargetPod(targetPod)
+  }
+
+  protected removeTargetPod(
+    targetName: string,
+    syncSpec: SyncSpecification,
+    pod: V1Pod
+  ) {
+    const podName = pod.metadata.name
+    const targetPods = this.targetPods[targetName]
+    for (const targetPod of targetPods) {
+      if (targetPod.podName === podName) {
+        targetPods.delete(targetPod)
+        this.emit('podDeleted', targetPod)
+      }
     }
   }
 
@@ -183,174 +207,105 @@ class Syncer extends EventEmitter {
       )
     })
 
-    const {watch, warning} = await this.watchmanCommand([
-      'watch',
-      this.config.rootPath,
-    ])
+    const {watch} = await this.watchmanCommand(['watch', this.config.rootPath])
 
     const {clock: startedAt} = await this.watchmanCommand(['clock', watch])
 
-    for (const [specName, spec] of Object.entries(this.syncSpecs)) {
+    for (const [targetName, syncSpec] of Object.entries(this.syncSpecs)) {
       await this.watchmanCommand([
         'subscribe',
         watch,
-        specName,
+        targetName,
         {
-          expression: spec.watchmanExpression || [
+          expression: syncSpec.watchmanExpression || [
             'allof',
-            ...(spec.excludeDirs || []).map(dir => ['not', ['dirname', dir]]),
+            ...(syncSpec.excludeDirs || []).map(dir => [
+              'not',
+              ['dirname', dir],
+            ]),
           ],
 
           fields: ['name', 'size', 'mtime_ms', 'exists', 'type'],
           since: startedAt,
-          ...(spec.localPath && {relative_root: spec.localPath}),
+          ...(syncSpec.localPath && {relative_root: syncSpec.localPath}),
         },
       ])
     }
   }
 
   protected async onFileChange(data: WatchmanSubscriptionResponse) {
-    const {subscription: specName, files} = data
-    for (const pod of this.targetPods[specName]) {
-      if (!this.syncQueue[pod.name]) {
-        this.syncQueue[pod.name] = new PartialSync()
+    const {subscription: targetName, files} = data
+    for (const targetPod of this.targetPods[targetName]) {
+      if (!targetPod.pendingSync) {
+        targetPod.pendingSync = new Sync(SyncType.Partial, targetPod)
       }
 
-      const sync = this.syncQueue[pod.name]
-
-      if (sync instanceof PartialSync) {
+      // No need to add paths to a full sync
+      if (targetPod.pendingSync.type === SyncType.Partial) {
         if (
-          sync.paths.size + files.length >
+          targetPod.pendingSync.paths.size + files.length >
           this.config.maxFilesForPartialSync
         ) {
-          this.syncQueue[pod.name] = new FullSync()
+          targetPod.pendingSync = new Sync(SyncType.Full, targetPod)
         } else {
           for (const file of files) {
-            sync.paths.add(file.name)
+            targetPod.pendingSync.paths.add(file.name)
           }
         }
       }
 
-      this.syncTarget(pod)
+      this.syncTargetPod(targetPod)
     }
   }
 
-  protected async syncTarget(targetPod: TargetPod) {
-    if (!this.daemonSetTunneler) {
-      return
-    }
-
-    this.emit('podSyncStart', targetPod)
-
-    const {nodeOverlay2Path} = this.config
-
-    if (this.syncLocks[targetPod.name]) return
-
-    this.syncLocks[targetPod.name] = Date.now()
+  protected async syncTargetPod(targetPod: TargetPod) {
+    if (targetPod.activeSync) return // Prevent concurrent syncs to the same pod
+    if (!targetPod.pendingSync) return
 
     try {
-      const sync = this.syncQueue[targetPod.name]
-      if (!sync) return
+      targetPod.activeSync = targetPod.pendingSync
+      targetPod.pendingSync = undefined
 
-      delete this.syncQueue[targetPod.name]
+      this.emit('syncStarted', targetPod.activeSync)
+      const tunnel = await this.nodeTunneler!.request(targetPod.nodeName)
 
-      const tunnel = await this.daemonSetTunneler.request(targetPod.nodeName)
-
-      const rsyncSource = targetPod.sync.localPath
-        ? targetPod.sync.localPath + '/'
-        : '.'
-
-      const relativeRsyncTargetPath = join(
-        targetPod.containerFsPath.split(`${nodeOverlay2Path}/`)[1],
-        targetPod.sync.containerPath
-      )
-
-      const rsyncTarget = `rsync://localhost:${
-        tunnel.rsyncPort
-      }/overlay2/${relativeRsyncTargetPath}/`
-
-      const rsyncArgs = [
-        '--recursive',
-        '--links',
-        '--executability',
-        '--times',
-        '--compress',
-        '--delete-after',
-      ]
-
-      for (const dir of targetPod.sync.excludeDirs) {
-        rsyncArgs.push('--exclude')
-        rsyncArgs.push(dir)
+      if (!targetPod.containerFsPath) {
+        targetPod.containerFsPath = (await new Promise((resolve, reject) => {
+          request.get(
+            `http://localhost:${tunnel.apiPort}/${targetPod.containerId}`,
+            (error, response, body) => (error ? reject(error) : resolve(body))
+          )
+        })) as string
       }
 
-      let rsyncProcess: ChildProcess
+      await targetPod.activeSync.execute(this.config, tunnel)
 
-      if (sync instanceof FullSync) {
-        rsyncProcess = spawn(
-          this.config.rsyncPath,
-          [...rsyncArgs, rsyncSource, rsyncTarget],
-          {cwd: this.config.rootPath}
-        )
-      } else if (sync instanceof PartialSync) {
-        rsyncProcess = spawn(
-          this.config.rsyncPath,
-          [
-            ...rsyncArgs,
-            '--delete-missing-args',
-            '--files-from=-',
-            rsyncSource,
-            rsyncTarget,
-          ],
-          {cwd: this.config.rootPath}
-        )
-        rsyncProcess.stdin.write(Array.from(sync.paths).join('\n'))
-        rsyncProcess.stdin.end()
-      }
+      const isInitialSync = !targetPod.hasBeenSynced
+      targetPod.hasBeenSynced = true
 
-      await new Promise((resolve, reject) => {
-        rsyncProcess.on('close', code => {
-          const ignoreCodes = [
-            11, // Happens when pod is deleted during a sync
-          ]
-
-          if (code && !ignoreCodes.includes(code)) {
-            return reject(new Error(`rsync exited with code ${code}`))
-          }
-          resolve()
-        })
-      })
-
-      const restartContainer = () =>
-        new Promise((resolve, reject) => {
+      if (
+        targetPod.syncSpec.restartAfterSync ||
+        (targetPod.syncSpec.restartAfterInitialSync && isInitialSync)
+      ) {
+        await new Promise((resolve, reject) => {
           request.delete(
             `http://localhost:${tunnel.apiPort}/${targetPod.containerId}`,
             (error, response, body) => (error ? reject(error) : resolve(body))
           )
         })
-
-      let isInitialSync = !this.initialSync[targetPod.name]
-
-      if (isInitialSync) {
-        this.initialSync[targetPod.name] = true
       }
 
-      if (
-        targetPod.sync.restartAfterSync ||
-        (targetPod.sync.restartAfterInitialSync && isInitialSync)
-      ) {
-        try {
-          await restartContainer()
-        } catch (error) {
-          // Ignore? FIXME
-        }
-      }
+      targetPod.previousSync = targetPod.activeSync
+      targetPod.activeSync = undefined
+      this.emit('syncCompleted', targetPod.previousSync)
+    } catch (error) {
+      targetPod.previousSync = targetPod.activeSync!
+      targetPod.previousSync.error = error
+      targetPod.activeSync = undefined
+      this.emit('syncError', error, targetPod.previousSync!)
     } finally {
-      delete this.syncLocks[targetPod.name]
-
-      this.emit('podSyncComplete', targetPod)
-
-      if (this.syncQueue[targetPod.name]) {
-        this.syncTarget(targetPod)
+      if (targetPod.pendingSync) {
+        this.syncTargetPod(targetPod)
       }
     }
   }

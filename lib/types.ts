@@ -1,5 +1,6 @@
 import {ChildProcess} from 'child_process'
 import Config from './Config'
+import Sync from './Sync'
 
 export interface SyncSpecification {
   localPath: string
@@ -13,6 +14,58 @@ export interface SyncSpecification {
   excludeDirs: string[]
   restartAfterInitialSync?: boolean
   restartAfterSync?: boolean
+}
+
+export interface TargetPod {
+  podName: string
+  containerFsPath?: string
+  nodeName: string
+  syncSpec: SyncSpecification
+  hasBeenSynced: boolean
+  containerId: string
+  activeSync?: Sync
+  pendingSync?: Sync
+  previousSync?: Sync
+}
+
+export interface NodeTunnel {
+  nodeName: string
+  podName: string
+  rsyncPort: number
+  apiPort: number
+  process: ChildProcess
+}
+
+export enum NodeTunnelerState {
+  Stopped,
+  Starting,
+  Running,
+  Stopping,
+}
+
+export enum SyncerState {
+  Stopped,
+  Starting,
+  Running,
+  Stopping,
+}
+
+export interface SyncerEvents {
+  starting: void
+  running: void
+  stopping: void
+  stopped: void
+  error: (error: Error) => void
+  podAdded: (targetPod: TargetPod) => void
+  podDeleted: (targetPod: TargetPod) => void
+  syncStarted: (sync: Sync) => void
+  syncCompleted: (sync: Sync) => void
+  syncError: (error: Error, sync: Sync) => void
+}
+
+export enum SyncType {
+  Full,
+  Partial,
 }
 
 export interface CliCommand {
@@ -35,20 +88,4 @@ export interface WatchmanSubscriptionResponseFile {
   name: string
   size: number
   type: string
-}
-
-export interface TargetPod {
-  name: string
-  containerFsPath: string
-  nodeName: string
-  sync: SyncSpecification
-  containerId: string
-}
-
-export interface DaemonSetPodTunnel {
-  nodeName: string
-  podName: string
-  rsyncPort: number
-  apiPort: number
-  process: ChildProcess
 }

@@ -1,32 +1,25 @@
-import {Config, Syncer} from '../../lib'
-import {randomBytes} from 'crypto'
 import {Core_v1Api} from '@kubernetes/client-node'
-import {
-  mkdir as mkdirCb,
-  rmdir as rmdirCb,
-  writeFile,
-  accessSync,
-  unlink as unlinkCb,
-} from 'fs'
-import {promisify} from 'util'
-import {join, resolve, relative} from 'path'
 import {exec as execCb} from 'child_process'
+import {randomBytes} from 'crypto'
+import {accessSync, mkdir as mkdirCb, unlink as unlinkCb, writeFile} from 'fs'
+import * as path from 'path'
+import {promisify} from 'util'
+import {Config, Syncer} from '../../lib'
 
 const exec = promisify(execCb)
 const mkdir = promisify(mkdirCb)
-const rmdir = promisify(rmdirCb)
 const unlink = promisify(unlinkCb)
 
 class TestContext {
-  config: Config
-  contextId: string
-  syncer: Syncer
-  tempDir: string
+  public config: Config
+  public contextId: string
+  public syncer: Syncer
+  public tempDir: string
 
   constructor() {
     this.contextId = randomBytes(8).toString('hex')
-    this.tempDir = join(
-      resolve(__dirname, '../'),
+    this.tempDir = path.join(
+      path.resolve(__dirname, '../'),
       'tmp',
       `test-${this.contextId}`
     )
@@ -42,7 +35,7 @@ class TestContext {
       kubeContext: KUBE_CONTEXT,
       namespace: KUBE_NAMESPACE,
       daemonSetNamespace: 'boilerplate',
-      rootPath: join(this.tempDir, 'localFiles'),
+      rootPath: path.join(this.tempDir, 'localFiles'),
       sync: {
         test: {
           containerPath: '/test',
@@ -57,29 +50,29 @@ class TestContext {
     this.syncer = new Syncer(this.config)
   }
 
-  async initialize() {
+  public async initialize() {
     await mkdir(this.tempDir)
-    await mkdir(join(this.tempDir, 'localFiles'))
-    await mkdir(join(this.tempDir, 'downloadedRemoteFiles'))
+    await mkdir(path.join(this.tempDir, 'localFiles'))
+    await mkdir(path.join(this.tempDir, 'downloadedRemoteFiles'))
     await this.createPod()
   }
 
-  async clean() {
+  public async clean() {
     await this.syncer.stop()
     await this.destroyPod()
     await exec(`rm -rf ${this.tempDir}`)
   }
 
-  async putRemoteFiles(files: {[path: string]: string}) {
+  public async putRemoteFiles(files: {[path: string]: string}) {
     //
   }
 
-  async putLocalFiles(files: {[relativePath: string]: string}) {
+  public async putLocalFiles(files: {[relativePath: string]: string}) {
     for (const [relativePath, data] of Object.entries(files)) {
       const pathParts = relativePath.split('/')
       if (pathParts.length > 1) {
         for (let i = 1; i <= pathParts.length - 1; i++) {
-          const dirPath = join(
+          const dirPath = path.join(
             this.tempDir + '/localFiles',
             pathParts.slice(0, i).join('/')
           )
@@ -93,7 +86,7 @@ class TestContext {
 
       await new Promise((resolve, reject) => {
         writeFile(
-          join(this.tempDir, '/localFiles', relativePath),
+          path.join(this.tempDir, '/localFiles', relativePath),
           data,
           err => (err ? reject(err) : resolve())
         )
@@ -101,7 +94,7 @@ class TestContext {
     }
   }
 
-  async localAndRemoteDiff() {
+  public async localAndRemoteDiff() {
     const downloadId = randomBytes(8).toString('hex')
 
     const podName = `k8sync-test-${this.contextId}`
@@ -112,12 +105,12 @@ class TestContext {
         : []),
       'cp',
       `${podName}:/test`,
-      join(this.tempDir, 'downloadedRemoteFiles', downloadId),
+      path.join(this.tempDir, 'downloadedRemoteFiles', downloadId),
     ]
     await exec(`${this.config.kubectlPath} ${kubectlArgs.join(' ')}`)
     try {
       await exec(
-        `diff -r ${join(this.tempDir, 'localFiles')} ${join(
+        `diff -r ${path.join(this.tempDir, 'localFiles')} ${path.join(
           this.tempDir,
           'downloadedRemoteFiles',
           downloadId
@@ -129,15 +122,15 @@ class TestContext {
     }
   }
 
-  async deleteLocalFiles(paths: string[]) {
-    for (const path of paths) {
-      await unlink(join(this.tempDir, '/localFiles', path))
+  public async deleteLocalFiles(paths: string[]) {
+    for (const localPath of paths) {
+      await unlink(path.join(this.tempDir, '/localFiles', localPath))
     }
   }
-  async moveLocalFiles(moves: {[currentPath: string]: string}) {
+  public async moveLocalFiles(moves: {[currentPath: string]: string}) {
     for (const [currentPath, newPath] of Object.entries(moves)) {
       await exec(
-        `mv ${join(this.tempDir, 'localFiles', currentPath)} ${join(
+        `mv ${path.join(this.tempDir, 'localFiles', currentPath)} ${path.join(
           this.tempDir,
           'localFiles',
           newPath
@@ -148,7 +141,7 @@ class TestContext {
 
   get podSynced() {
     return new Promise((resolve, reject) => {
-      this.syncer.once('podSyncComplete', resolve)
+      this.syncer.once('syncCompleted', resolve)
     })
   }
 

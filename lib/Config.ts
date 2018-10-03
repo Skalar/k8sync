@@ -1,96 +1,18 @@
-import {SyncSpecification} from './types'
-import {sep, dirname} from 'path'
-import * as yaml from 'js-yaml'
-import * as fs from 'fs'
-import {promisify} from 'util'
 import {KubeConfig} from '@kubernetes/client-node'
+import * as fs from 'fs'
+import * as yaml from 'js-yaml'
+import {dirname, sep} from 'path'
+import {promisify} from 'util'
+import {SyncSpecification} from './types'
 
 const readFile = promisify(fs.readFile)
 const access = promisify(fs.access)
 
 class Config {
   /**
-   * Kubernetes namespace to install k8sync DaemonSet
-   */
-  daemonSetNamespace: string = 'kube-system'
-
-  /**
-   * Default namespace for pods to sync
-   */
-  namespace: string
-
-  /**
-   * Project root, all specifications are relative to this.
-   * Defaults to the dir in which the config resides.
-   */
-  rootPath: string
-
-  /**
-   * Specifications for what to sync
-   */
-  sync: {[name: string]: SyncSpecification} = {}
-
-  /**
-   * Which kubernetes config context to use
-   */
-  kubeContext?: string
-
-  /**
-   * Path to rsync executable
-   */
-  rsyncPath: string = 'rsync'
-
-  /**
-   * Path to kubectl executable
-   */
-  kubectlPath: string = 'kubectl'
-
-  /**
-   * Max number of files before forcing full sync
-   */
-  maxFilesForPartialSync: number = 500
-
-  /**
-   * Path to docker overlay2 fs on kubernetes nodes
-   */
-  nodeOverlay2Path = '/var/lib/docker/overlay2'
-
-  /**
-   * Path to docker socket on kubernetes nodes
-   */
-  nodeDockerSocketPath = '/var/run/docker.sock'
-
-  /**
-   * Config for node kubernetes client
-   */
-  kubeConfig: KubeConfig
-
-  constructor(input: Config) {
-    this.namespace = input.namespace
-    this.rootPath = input.rootPath
-    this.sync = input.sync
-
-    if (input.daemonSetNamespace) {
-      this.daemonSetNamespace = input.daemonSetNamespace
-    }
-
-    if (input.rsyncPath) {
-      this.rsyncPath = input.rsyncPath
-    }
-
-    this.kubeConfig = new KubeConfig()
-    this.kubeConfig.loadFromDefault()
-
-    if (input.kubeContext) {
-      this.kubeContext = input.kubeContext
-      this.kubeConfig.setCurrentContext(this.kubeContext)
-    }
-  }
-
-  /**
    * Load k8sync config file
    */
-  static async load(path?: string) {
+  public static async load(path?: string) {
     const pathToUse = path || (await this.findConfigFilePath())
 
     if (!pathToUse) {
@@ -129,6 +51,83 @@ class Config {
       } catch (error) {
         pathParts.pop()
       }
+    }
+  }
+  /**
+   * Kubernetes namespace to install k8sync DaemonSet
+   */
+  public daemonSetNamespace: string = 'kube-system'
+
+  /**
+   * Default namespace for pods to sync
+   */
+  public namespace: string
+
+  /**
+   * Project root, all specifications are relative to this.
+   * Defaults to the dir in which the config resides.
+   */
+  public rootPath: string
+
+  /**
+   * Specifications for what to sync
+   */
+  public sync: {[name: string]: SyncSpecification} = {}
+
+  /**
+   * Which kubernetes config context to use
+   */
+  public kubeContext?: string
+
+  /**
+   * Path to rsync executable
+   */
+  public rsyncPath: string = 'rsync'
+
+  /**
+   * Path to kubectl executable
+   */
+  public kubectlPath: string = 'kubectl'
+
+  /**
+   * Max number of files before forcing full sync
+   */
+  public maxFilesForPartialSync: number = 500
+
+  /**
+   * Path to docker overlay2 fs on kubernetes nodes
+   */
+  public nodeOverlay2Path = '/var/lib/docker/overlay2'
+
+  /**
+   * Path to docker socket on kubernetes nodes
+   */
+  public nodeDockerSocketPath = '/var/run/docker.sock'
+
+  /**
+   * Config for node kubernetes client
+   */
+  public kubeConfig: KubeConfig
+
+  constructor(input: Config) {
+    this.namespace = input.namespace
+    this.rootPath = input.rootPath
+    this.sync = input.sync
+
+    if (input.daemonSetNamespace) {
+      this.daemonSetNamespace = input.daemonSetNamespace
+    }
+
+    if (input.rsyncPath) {
+      this.rsyncPath = input.rsyncPath
+    }
+
+    this.kubeConfig = new KubeConfig()
+    this.kubeConfig.loadFromDefault()
+
+    if (input.kubeContext) {
+      this.kubeContext = input.kubeContext
+      this.kubeConfig.setCurrentContext(this.kubeContext)
     }
   }
 }

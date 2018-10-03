@@ -1,8 +1,8 @@
 import {CliCommand} from '../../types'
-import sync from './sync'
-import restart from './restart'
-import initCluster from './initCluster'
 import cleanCluster from './cleanCluster'
+import initCluster from './initCluster'
+import restart from './restart'
+import sync from './sync'
 
 const commands: {[commandName: string]: CliCommand} = {
   'cluster:init': initCluster,

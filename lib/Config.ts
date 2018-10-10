@@ -12,7 +12,7 @@ class Config {
   /**
    * Load k8sync config file
    */
-  public static async load(path?: string) {
+  public static async load(path?: string, values = process.env) {
     const pathToUse = path || (await this.findConfigFilePath())
 
     if (!pathToUse) {
@@ -26,7 +26,7 @@ class Config {
         const strMatch = varStr.match(/^\$\{([^\}\:]+)(?:\:\-)?([^\}]+)?\}$/)
         if (strMatch) {
           const [, name, defaultValue] = strMatch
-          return result.replace(varStr, process.env[name] || defaultValue)
+          return result.replace(varStr, values[name] || defaultValue)
         }
 
         return ''

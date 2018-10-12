@@ -17,6 +17,7 @@ export interface SyncSpecification {
 }
 
 export interface TargetPod {
+  targetName: string
   podName: string
   containerFsPath?: string
   nodeName: string

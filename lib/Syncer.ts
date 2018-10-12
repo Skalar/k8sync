@@ -177,6 +177,7 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
       podName,
       syncSpec,
       containerId,
+      targetName,
     }
     this.targetPods[targetName].add(targetPod)
     this.emit('podAdded', targetPod)

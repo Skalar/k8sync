@@ -110,6 +110,23 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
     this.emit('stopped')
   }
 
+  public async restartPod(pod: TargetPod) {
+    if (!this.nodeTunneler) {
+      throw new Error(
+        'Cannot restart pod when daemonSetTunneler is not available'
+      )
+    }
+
+    const tunnel = await this.nodeTunneler.request(pod.nodeName)
+
+    await new Promise((resolve, reject) => {
+      request.delete(
+        `http://localhost:${tunnel.apiPort}/${pod.containerId}`,
+        (error, response, body) => (error ? reject(error) : resolve(body))
+      )
+    })
+  }
+
   protected async watchTargetPods(
     targetName: string,
     syncSpec: SyncSpecification
@@ -288,12 +305,7 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
         targetPod.syncSpec.restartAfterSync ||
         (targetPod.syncSpec.restartAfterInitialSync && isInitialSync)
       ) {
-        await new Promise((resolve, reject) => {
-          request.delete(
-            `http://localhost:${tunnel.apiPort}/${targetPod.containerId}`,
-            (error, response, body) => (error ? reject(error) : resolve(body))
-          )
-        })
+        await this.restartPod(targetPod)
       }
 
       targetPod.previousSync = targetPod.activeSync

@@ -2,3 +2,9 @@ node_modules
 /tests/tmp/
 !/tests/tmp/.gitkeep
 .envrc
+lib/**/*.d.ts
+lib/**/*.js
+lib/**/*.map
+tests/**/*.d.ts
+tests/**/*.js
+tests/**/*.map

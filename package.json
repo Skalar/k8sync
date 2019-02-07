@@ -27,7 +27,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@kubernetes/client-node": "^0.6.0",
+    "@kubernetes/client-node": "0.8.1",
     "chalk": "^2.4.1",
     "columnify": "^1.5.4",
     "fb-watchman": "^2.0.0",

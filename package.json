@@ -1,6 +1,6 @@
 {
   "name": "k8sync",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "author": "Trym Skaar <trym.skaar@gmail.com>",
   "description": "Watch and sync local files to kubernetes pods using watchman and rsync",
   "repository": "skalar/k8sync",

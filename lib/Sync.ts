@@ -40,6 +40,7 @@ class Sync {
       '--times',
       '--compress',
       '--delete-after',
+      ...(targetPod.syncSpec.rsyncArgs ? targetPod.syncSpec.rsyncArgs : []),
     ]
 
     for (const dir of targetPod.syncSpec.excludeDirs) {

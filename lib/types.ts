@@ -14,6 +14,7 @@ export interface SyncSpecification {
   excludeDirs: string[]
   restartAfterInitialSync?: boolean
   restartAfterSync?: boolean
+  rsyncArgs?: string[]
 }
 
 export interface TargetPod {

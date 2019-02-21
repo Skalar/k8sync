@@ -75,20 +75,22 @@ class SyncerUI {
       lines.push(` ${chalk[pods.length ? 'blue' : 'grey'].bold(targetName)}`)
 
       for (const pod of pods) {
+        const podDescription = `${pod.podName} [${pod.containerName}]`
+
         if (pod.activeSync || pod.pendingSync) {
-          lines.push(chalk.yellowBright(`  ${play} ${pod.podName}`))
+          lines.push(chalk.yellowBright(`  ${play} ${podDescription}`))
         } else if (pod.previousSync) {
           if (pod.previousSync.error) {
             lines.push(
               chalk.red(
-                `  ${warning} ${pod.podName}: ${pod.previousSync.error}`
+                `  ${warning} ${podDescription}: ${pod.previousSync.error}`
               )
             )
           } else {
-            lines.push(' ' + chalk.green(`${tick} ${pod.podName}`))
+            lines.push(' ' + chalk.green(`${tick} ${podDescription}`))
           }
         } else {
-          lines.push('  ' + chalk.grey(`${circleDotted} ${pod.podName}`))
+          lines.push('  ' + chalk.grey(`${circleDotted} ${podDescription}`))
         }
       }
       lines.push(null)

@@ -5,6 +5,7 @@ import Sync from './Sync'
 export interface SyncSpecification {
   localPath: string
   containerPath: string
+  containerName?: string
   selectors: [string]
   watchmanExpression?: [string, ...any[]]
   podSelector:
@@ -25,6 +26,8 @@ export interface TargetPod {
   syncSpec: SyncSpecification
   hasBeenSynced: boolean
   containerId: string
+  containerName: string
+  containerGuessed: boolean
   activeSync?: Sync
   pendingSync?: Sync
   previousSync?: Sync
@@ -60,6 +63,7 @@ export interface SyncerEvents {
   error: (error: Error) => void
   podAdded: (targetPod: TargetPod) => void
   podDeleted: (targetPod: TargetPod) => void
+  podWarning: (targetPod: TargetPod) => void
   syncStarted: (sync: Sync) => void
   syncCompleted: (sync: Sync) => void
   syncError: (error: Error, sync: Sync) => void

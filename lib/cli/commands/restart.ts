@@ -42,9 +42,14 @@ const restart: CliCommand = {
 
       const restartContainer = async (pod: V1Pod) => {
         const {nodeName} = pod.spec
-        const containerId = pod.status.containerStatuses[0].containerID.substr(
-          9
-        )
+        const containerStatus =
+          pod.status.containerStatuses.find(container =>
+            spec.containerName
+              ? container.name === spec.containerName
+              : container.name === specName
+          ) || pod.status.containerStatuses[0]
+
+        const containerId = containerStatus.containerID.substr(9)
 
         const tunnel = await tunneler.request(nodeName)
 

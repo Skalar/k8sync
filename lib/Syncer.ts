@@ -142,7 +142,7 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
           if (['ADDED', 'MODIFIED'].includes(type)) {
             if (obj.metadata.deletionTimestamp) {
               // Pod is being deleted
-              await this.removeTargetPod(targetName, syncSpec, obj)
+              await this.removeTargetPod(targetName, obj)
             } else if (obj.status.phase === 'Running') {
               const existingTargetPod = Array.from(
                 this.targetPods[targetName]
@@ -183,8 +183,14 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
 
     const podName = pod.metadata.name
     const nodeName = pod.spec.nodeName
-    // FIXME verify that this selection is sane / support selecting by name
-    const containerStatus = pod.status.containerStatuses[0]
+
+    const containerStatus =
+      pod.status.containerStatuses.find(container =>
+        syncSpec.containerName
+          ? container.name === syncSpec.containerName
+          : container.name === targetName
+      ) || pod.status.containerStatuses[0]
+
     if (!containerStatus.ready) return
 
     const containerId = containerStatus.containerID.substr(9)
@@ -195,18 +201,18 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
       syncSpec,
       containerId,
       targetName,
+      containerName: containerStatus.name,
+      containerGuessed:
+        pod.status.containerStatuses.length > 1 && !syncSpec.containerName,
     }
+
     this.targetPods[targetName].add(targetPod)
     this.emit('podAdded', targetPod)
     targetPod.pendingSync = new Sync(SyncType.Full, targetPod)
     this.syncTargetPod(targetPod)
   }
 
-  protected removeTargetPod(
-    targetName: string,
-    syncSpec: SyncSpecification,
-    pod: V1Pod
-  ) {
+  protected removeTargetPod(targetName: string, pod: V1Pod) {
     const podName = pod.metadata.name
     const targetPods = this.targetPods[targetName]
     for (const targetPod of targetPods) {
@@ -328,9 +334,8 @@ class Syncer extends (EventEmitter as {new (): SyncerEmitter}) {
       throw new Error('Watchman command when no watchman client')
     }
     return new Promise((resolve, reject) => {
-      this.watchmanClient!.command(
-        args,
-        (err: any, res: any) => (err ? reject(err) : resolve(res))
+      this.watchmanClient!.command(args, (err: any, res: any) =>
+        err ? reject(err) : resolve(res)
       )
     })
   }
